@@ -111,10 +111,13 @@ class SimpleClient:
         self.sig_send_data.emit(data)
         
     def onRecvData(self, data: bytes):
-        self.sig_recv_data.emit(data)
+        print(f'recvData {data}')
 
 if __name__ == '__main__':
     simpleClient = SimpleClient()
+
+    def convert(byte_str: str):
+        return bytearray([int(x, 16) for x in byte_str.split(' ')])
 
     def loop():
         sysin = sys.stdin.readline()

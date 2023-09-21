@@ -13,7 +13,7 @@ def recv_data(client_socket) :
     while True :
         data = client_socket.recv(1024)
 
-        print("recive : ",repr(data.decode()))
+        print("recive : ",repr(data))
 start_new_thread(recv_data, (client_socket,))
 print ('>> Connect Server')
 
