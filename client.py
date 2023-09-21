@@ -38,6 +38,7 @@ class ThreadRecv(threading.Thread):
     def __init__(self, sock: socket.socket, addr: dict, queueRecv: queue.Queue):
         threading.Thread.__init__(self, name='ThreadRecv')
         self.sig_recv_data = Callback(bytes)
+        self.sig_terminated = Callback()
         self.sock = sock
         self.queueRecv = queueRecv
         self.addr = addr
@@ -48,8 +49,13 @@ class ThreadRecv(threading.Thread):
                 data = self.sock.recv(1024)
                 if data is not None:
                     self.sig_recv_data.emit(data)
+                else:
+                    print(f'>>> Disconnect by {self.addr[0]} : {self.addr[1]}')
+                    self.sig_terminated.emit()
             except ConnectionResetError as e:
                 print(f'>>> Disconnect by {self.addr[0]} : {self.addr[1]}')
+                self.sig_terminated.emit()
+
     def stop(self):
         self.keepAlive = False
 
@@ -98,15 +104,14 @@ class SimpleClient:
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((SERVER, PORT))
         self.sock.listen()
-        self.startThreadSend()
         self.startThreadManagerClient()
 
     def disconnect(self):
         self.sock.close()
 
-    def startThreadSend(self):
+    def startThreadSend(self, sock: socket.socket):
         if self.threadSend is None:
-            self.threadSend = ThreadSend(self.sock, self.queueSend)
+            self.threadSend = ThreadSend(sock, self.queueSend)
             self.threadSend.sig_send_data.connect(self.onSendData)
             self.threadSend.daemon = True
             self.threadSend.start()
@@ -115,6 +120,7 @@ class SimpleClient:
         if self.threadRecv is None:
             self.threadRecv = ThreadRecv(sock, addr, self.queueRecv)
             self.threadRecv.sig_recv_data.connect(self.onRecvData)
+            self.threadRecv.sig_terminated.connect(self.onRecvDisconnected)
             self.threadRecv.daemon = True
             self.threadRecv.start()
 
@@ -125,11 +131,10 @@ class SimpleClient:
             self.threadManagerClient.daemon = True
             self.threadManagerClient.start()
 
-    def stopThread(self):
+    def stopThreadSend(self):
         if self.threadSend is not None:
             self.threadSend.stop()
-        if self.threadRecv is not None:
-            self.threadRecv.stop()
+            self.threadSend = None
 
     def sendData(self, data: Union[bytes, bytearray]):
         self.queueSend.put(bytes(data))
@@ -140,8 +145,14 @@ class SimpleClient:
     def onRecvData(self, data: bytes):
         print(f'{data}')
 
+    def onRecvDisconnected(self):
+        if self.threadRecv is not None:
+            self.threadRecv.stop()
+            self.threadRecv = None
+
     def onManageClient(self, clientSocket:socket.socket, clientAddr: dict):
         print(f'{clientSocket}, {clientAddr}')
+        self.startThreadSend(clientSocket)
         self.startThreadRecv(clientSocket, clientAddr)
 
 if __name__ == '__main__':
