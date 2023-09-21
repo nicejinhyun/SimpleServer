@@ -31,7 +31,7 @@ def threaded(client_socket, addr):
                 print('>> Disconnected by ' + addr[0], ':', addr[1])
                 break
 
-            print('>> Received from ' + addr[0], ':', addr[1], data.decode())
+            print('>> Received from ' + addr[0], ':', addr[1], data)
 
             # 서버에 접속한 클라이언트들에게 채팅 보내기
             # 메세지를 보낸 본인을 제외한 서버에 접속한 클라이언트에게 메세지 보내기
