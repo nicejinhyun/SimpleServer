@@ -35,21 +35,36 @@ class ThreadSend(threading.Thread):
 
 class ThreadRecv(threading.Thread):
     keepAlive = True
-    def __init__(self, sock: socket.socket, queueRecv: queue.Queue):
+    def __init__(self, sock: socket.socket, addr: dict, queueRecv: queue.Queue):
         threading.Thread.__init__(self, name='ThreadRecv')
         self.sig_recv_data = Callback(bytes)
         self.sock = sock
         self.queueRecv = queueRecv
+        self.addr = addr
 
     def run(self):
         while self.keepAlive:
-            data = self.sock.recv(1024)
-            if data is not None:
-                self.sig_recv_data.emit(data)
-#                self.queueRecv.put(data)
-
+            try:
+                data = self.sock.recv(1024)
+                if data is not None:
+                    self.sig_recv_data.emit(data)
+            except ConnectionResetError as e:
+                print(f'>>> Disconnect by {self.addr[0]} : {self.addr[1]}')
     def stop(self):
         self.keepAlive = False
+
+class ThreadManagerClient(threading.Thread):
+    keepAlive = True
+    def __init__(self, sock: socket.socket):
+        threading.Thread.__init__(self, name="ThreadManagerClient")
+        self.sig_client_connect = Callback()
+        self.sock = sock
+    
+    def run(self):
+        while self.keepAlive:
+            clientSocket, clientAddr = self.sock.accept()
+            print(f'{clientAddr}')
+            self.sig_client_connect.emit(clientSocket, clientAddr)
 
 class Callback(object):
     _args = None
@@ -69,6 +84,7 @@ class SimpleClient:
     sock: Union[socket.socket, None] = None
     threadSend: Union[ThreadSend, None] = None
     threadRecv: Union[ThreadRecv, None] = None
+    threadManagerClient: Union[ThreadManagerClient, None] = None
 
     def __init__(self):
         self.sig_send_data = Callback(bytes)
@@ -79,24 +95,35 @@ class SimpleClient:
     
     def connect(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.connect((SERVER, PORT))
-        self.startThreads()
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((SERVER, PORT))
+        self.sock.listen()
+        self.startThreadSend()
+        self.startThreadManagerClient()
 
     def disconnect(self):
         self.sock.close()
 
-    def startThreads(self):
+    def startThreadSend(self):
         if self.threadSend is None:
             self.threadSend = ThreadSend(self.sock, self.queueSend)
             self.threadSend.sig_send_data.connect(self.onSendData)
             self.threadSend.daemon = True
             self.threadSend.start()
         
+    def startThreadRecv(self, sock: socket.socket, addr: dict):
         if self.threadRecv is None:
-            self.threadRecv = ThreadRecv(self.sock, self.queueRecv)
+            self.threadRecv = ThreadRecv(sock, addr, self.queueRecv)
             self.threadRecv.sig_recv_data.connect(self.onRecvData)
             self.threadRecv.daemon = True
             self.threadRecv.start()
+
+    def startThreadManagerClient(self):
+        if self.threadManagerClient is None:
+            self.threadManagerClient = ThreadManagerClient(self.sock)
+            self.threadManagerClient.sig_client_connect.connect(self.onManageClient)
+            self.threadManagerClient.daemon = True
+            self.threadManagerClient.start()
 
     def stopThread(self):
         if self.threadSend is not None:
@@ -111,7 +138,11 @@ class SimpleClient:
         self.sig_send_data.emit(data)
         
     def onRecvData(self, data: bytes):
-        print(f'recvData {data}')
+        print(f'{data}')
+
+    def onManageClient(self, clientSocket:socket.socket, clientAddr: dict):
+        print(f'{clientSocket}, {clientAddr}')
+        self.startThreadRecv(clientSocket, clientAddr)
 
 if __name__ == '__main__':
     simpleClient = SimpleClient()
