@@ -9,6 +9,22 @@ from typing import Union
 SERVER = '127.0.0.1'
 PORT = 9999
 
+packetOn = [
+    "F7 0B 01 19 02 40 10 01 00 B7 EE",
+    "F7 0C 01 19 04 40 10 01 01 01 B6 EE",
+
+    "F7 0B 01 19 02 40 10 02 00 B4 EE",
+    "F7 0C 01 19 04 40 10 02 02 02 B5 EE",
+
+    "F7 0B 01 19 02 40 11 01 00 B6 EE",
+    "F7 0B 01 19 04 40 11 01 01 B1 EE",
+
+    "F7 0B 01 19 02 40 12 01 00 B5 EE",
+    "F7 0B 01 19 04 40 12 01 01 B2 EE",
+
+    "F7 0B 01 19 02 04 13 01 00 B4 EE",
+]
+
 class ThreadSend(threading.Thread):
     keepAlive = True
     sock: Union[socket.socket, None] = None
@@ -136,19 +152,30 @@ class SimpleClient:
             self.threadSend.stop()
             self.threadSend = None
 
+    def stopThreadRecv(self):
+        if self.threadRecv is not None:
+            self.threadRecv.stop()
+            self.threadRecv = None
+
     def sendData(self, data: Union[bytes, bytearray]):
         self.queueSend.put(bytes(data))
 
     def onSendData(self, data: bytes):
         self.sig_send_data.emit(data)
-        
+
+    def convert(byte_str: str):
+        return bytearray([int(x, 16) for x in byte_str.split(' ')])        
+
     def onRecvData(self, data: bytes):
-        print(f'{data}')
+        for index, item in enumerate(packetOn):
+            byteItem = convert(item)
+            if data == byteItem:
+                print(f'{data},{index}')
+                self.onSendData(data)
 
     def onRecvDisconnected(self):
-        if self.threadRecv is not None:
-            self.threadRecv.stop()
-            self.threadRecv = None
+        self.stopThreadSend()
+        self.stopThreadRecv();
 
     def onManageClient(self, clientSocket:socket.socket, clientAddr: dict):
         print(f'{clientSocket}, {clientAddr}')
@@ -173,7 +200,7 @@ if __name__ == '__main__':
             simpleClient.disconnect()
             pass
         elif cmd == 1:
-            simpleClient.sendData(bytearray([0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x01, 0x00, 0xB7, 0xEE]))
+            simpleClient.sendData(bytearray([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x12, 0x01, 0x01, 0xB2, 0xEE]))
             loop()
         elif cmd == 2:
             simpleClient.sendData(bytearray([0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x01, 0x00, 0xB7, 0xEE]))
