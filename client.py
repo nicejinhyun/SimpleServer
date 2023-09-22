@@ -4,26 +4,11 @@ import sys
 import time
 import threading
 
-from typing import Union
+from functools import reduce
+from typing import Union, List
 
 SERVER = '127.0.0.1'
 PORT = 9999
-
-packetOn = [
-    "F7 0B 01 19 02 40 10 01 00 B7 EE",
-    "F7 0C 01 19 04 40 10 01 01 01 B6 EE",
-
-    "F7 0B 01 19 02 40 10 02 00 B4 EE",
-    "F7 0C 01 19 04 40 10 02 02 02 B5 EE",
-
-    "F7 0B 01 19 02 40 11 01 00 B6 EE",
-    "F7 0B 01 19 04 40 11 01 01 B1 EE",
-
-    "F7 0B 01 19 02 40 12 01 00 B5 EE",
-    "F7 0B 01 19 04 40 12 01 01 B2 EE",
-
-    "F7 0B 01 19 02 04 13 01 00 B4 EE",
-]
 
 class ThreadSend(threading.Thread):
     keepAlive = True
@@ -51,6 +36,7 @@ class ThreadSend(threading.Thread):
 
 class ThreadRecv(threading.Thread):
     keepAlive = True
+
     def __init__(self, sock: socket.socket, addr: dict, queueRecv: queue.Queue):
         threading.Thread.__init__(self, name='ThreadRecv')
         self.sig_recv_data = Callback(bytes)
@@ -68,9 +54,11 @@ class ThreadRecv(threading.Thread):
                 else:
                     print(f'>>> Disconnect by {self.addr[0]} : {self.addr[1]}')
                     self.sig_terminated.emit()
+                    self.keepAlive = False
             except ConnectionResetError as e:
                 print(f'>>> Disconnect by {self.addr[0]} : {self.addr[1]}')
                 self.sig_terminated.emit()
+                self.keepAlive = False
 
     def stop(self):
         self.keepAlive = False
@@ -107,8 +95,10 @@ class SimpleClient:
     threadSend: Union[ThreadSend, None] = None
     threadRecv: Union[ThreadRecv, None] = None
     threadManagerClient: Union[ThreadManagerClient, None] = None
+    recvBuffer: bytearray
 
     def __init__(self):
+        self.recvBuffer = bytearray()
         self.sig_send_data = Callback(bytes)
         self.sig_recv_data = Callback(bytes)
         self.queueSend = queue.Queue()
@@ -158,6 +148,7 @@ class SimpleClient:
             self.threadRecv = None
 
     def sendData(self, data: Union[bytes, bytearray]):
+        print(f'sendData: {data}')
         self.queueSend.put(bytes(data))
 
     def onSendData(self, data: bytes):
@@ -166,12 +157,20 @@ class SimpleClient:
     def convert(byte_str: str):
         return bytearray([int(x, 16) for x in byte_str.split(' ')])        
 
+    @staticmethod
+    def calcXORChecksum(data: Union[bytearray, bytes, List[int]]) -> int:
+        return reduce(lambda x, y: x ^ y, data, 0)
+
     def onRecvData(self, data: bytes):
-        for index, item in enumerate(packetOn):
-            byteItem = convert(item)
-            if data == byteItem:
-                print(f'{data},{index}')
-                self.onSendData(data)
+        self.recvBuffer.extend(data)
+
+        if self.recvBuffer[0] == 0xF7 and self.recvBuffer[-1] == 0xEE:
+            if self.recvBuffer[4] == 0x02:
+                self.recvBuffer[4] = 0x04
+                self.recvBuffer[8] = self.recvBuffer[7]
+                self.recvBuffer[9] = self.calcXORChecksum(self.recvBuffer[:-2])
+                self.sendData(self.recvBuffer)
+                self.recvBuffer.clear()
 
     def onRecvDisconnected(self):
         self.stopThreadSend()
