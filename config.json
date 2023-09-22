@@ -1,0 +1,159 @@
+{
+    "name": "Wallpad Controller with RS485",
+    "version": "0.0.1",
+    "slug": "contoller",
+    "description": "Wallpad Controller for Homeassistant",
+    "arch": [
+        "armhf",
+        "armv7",
+        "aarch64",
+        "amd64",
+        "i386"
+    ],
+    "url": "https://github.com/nicejinhyun/WallpadController",
+    "startup": "application",
+    "boot": "auto",
+    "uart": true,
+    "map": [
+        "share:rw"
+    ],
+    "options": {
+      "RS485": {
+        "type": "Socket"
+      },
+      "Socket": {
+        "server": "127.0.0.1",
+        "port": 9999
+      },
+      "Mqtt": {
+        "server": "127.0.0.1",
+        "port": 1883,
+        "username": "id",
+        "password": "pw"
+      },
+      "Devices": {
+        "Light": false,
+        "Thermostat": false,
+        "Airconditioner": false,
+        "Gasvalve": false,
+        "Ventilator": false,
+        "Elevator": false,
+        "Batchoffsw": true,
+        "HEMS": true,
+        "Doorlock": true
+      },
+      "Light": [
+        {
+          "name": "Living Room Ceil 1",
+          "index": 0,
+          "room": 1
+        },
+        {
+          "name": "Living Room Ceil 2",
+          "index": 1,
+          "room": 1
+        },
+        {
+          "name": "Living Room Ceil 3",
+          "index": 2,
+          "room": 1
+        },
+        {
+          "name": "hallway",
+          "index": 3,
+          "room": 1
+        }
+      ],
+      "Thermostat": [
+        {
+          "name": "Livingroom Thermostat",
+          "index": 0,
+          "room": 1,
+          "range_min": 18,
+          "range_max": 35
+        },
+        {
+          "name": "Bedroom Thermostat",
+          "index": 0,
+          "room": 2,
+          "range_min": 18,
+          "range_max": 35
+        },
+        {
+          "name": "Child 1 Thermostat",
+          "index": 0,
+          "room": 3,
+          "range_min": 18,
+          "range_max": 35
+        },
+        {
+          "name": "Child 2 Thermostat",
+          "index": 0,
+          "room": 4,
+          "range_min": 18,
+          "range_max": 35
+        }
+      ],
+      "Airconditioner": [
+        {
+          "name": "Livingroom Airconditioner",
+          "index": 0,
+          "room": 1,
+          "range_min": 18,
+          "range_max": 35
+        },
+        {
+          "name": "Bedroom Airconditioner",
+          "index": 0,
+          "room": 2,
+          "range_min": 18,
+          "range_max": 35
+        },
+        {
+          "name": "Child 1 Airconditioner",
+          "index": 0,
+          "room": 3,
+          "range_min": 18,
+          "range_max": 35
+        },
+        {
+          "name": "Child 2 Airconditioner",
+          "index": 0,
+          "room": 4,
+          "range_min": 18,
+          "range_max": 35
+        }
+      ],
+      "Gasvalve": {
+        "name": "Kitchen Gas Valve",
+        "index": 0,
+        "room": 0
+      },
+      "Ventilator": {
+        "name": "Ventilator",
+        "index": 0,
+        "room": 0
+      },
+      "Elevator": {
+        "name": "Elevator",
+        "index": 0,
+        "room": 0
+      },
+      "Batchoffsw": {
+        "name": "Batch Off Switch",
+        "index": 0,
+        "room": 0
+      },
+      "HEMS": {
+        "name": "HEMS",
+        "index": 0,
+        "room": 0
+      },
+      "Doorlock": {
+        "name": "Front Door Lock",
+        "index": 0,
+        "room": 0,
+        "gpio": 23
+      }
+    }
+}

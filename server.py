@@ -1,65 +1,210 @@
+import queue
 import socket
-from _thread import *
+import sys
+import time
+import threading
 
-client_sockets = [] # 서버에 접속한 클라이언트 목록
+from functools import reduce
+from typing import Union, List
 
-# 서버 IP 및 열어줄 포트
-HOST = '127.0.0.1'
+SERVER = '127.0.0.1'
 PORT = 9999
 
-# 서버 소켓 생성
-print('>> Server Start')
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server_socket.bind((HOST, PORT))
-server_socket.listen()
+class ThreadSend(threading.Thread):
+    keepAlive = True
+    sock: Union[socket.socket, None] = None
+    def __init__(self, sock: socket.socket, queueSend: queue.Queue):
+        threading.Thread.__init__(self, name='ThreadSend')
+        self.sig_send_data = Callback(bytes)
+        self.sock = sock
+        self.queueSend = queueSend
+    
+    def run(self):
+        while self.keepAlive:
+            try:
+                if not self.queueSend.empty():
+                    data = self.queueSend.get()
+                    self.sock.send(data)
+                    self.sig_send_data.emit(data)
+                else:
+                    time.sleep(1e-3)
+            except Exception as e:
+                print(f'{e}')
+    
+    def stop(self):
+        self.keepAlive = False
 
-# 쓰레드에서 실행되는 코드입니다.
-# 접속한 클라이언트마다 새로운 쓰레드가 생성되어 통신을 하게 됩니다.
-def threaded(client_socket, addr):
-    print('>> Connected by :', addr[0], ':', addr[1])
+class ThreadRecv(threading.Thread):
+    keepAlive = True
 
-    # 클라이언트가 접속을 끊을 때 까지 반복합니다.
-    while True:
+    def __init__(self, sock: socket.socket, addr: dict, queueRecv: queue.Queue):
+        threading.Thread.__init__(self, name='ThreadRecv')
+        self.sig_recv_data = Callback(bytes)
+        self.sig_terminated = Callback()
+        self.sock = sock
+        self.queueRecv = queueRecv
+        self.addr = addr
 
-        try:
+    def run(self):
+        while self.keepAlive:
+            try:
+                data = self.sock.recv(1024)
+                if data is not None:
+                    self.sig_recv_data.emit(data)
+                else:
+                    print(f'>>> Disconnect by {self.addr[0]} : {self.addr[1]}')
+                    self.sig_terminated.emit()
+                    self.keepAlive = False
+            except ConnectionResetError as e:
+                print(f'>>> Disconnect by {self.addr[0]} : {self.addr[1]}')
+                self.sig_terminated.emit()
+                self.keepAlive = False
 
-            # 데이터가 수신되면 클라이언트에 다시 전송합니다.(에코)
-            data = client_socket.recv(1024)
+    def stop(self):
+        self.keepAlive = False
 
-            if not data:
-                print('>> Disconnected by ' + addr[0], ':', addr[1])
-                break
+class ThreadManagerClient(threading.Thread):
+    keepAlive = True
+    def __init__(self, sock: socket.socket):
+        threading.Thread.__init__(self, name="ThreadManagerClient")
+        self.sig_client_connect = Callback()
+        self.sock = sock
+    
+    def run(self):
+        while self.keepAlive:
+            clientSocket, clientAddr = self.sock.accept()
+            print(f'{clientAddr}')
+            self.sig_client_connect.emit(clientSocket, clientAddr)
 
-            print('>> Received from ' + addr[0], ':', addr[1], data.decode())
+class Callback(object):
+    _args = None
+    _callback = None
 
-            # 서버에 접속한 클라이언트들에게 채팅 보내기
-            # 메세지를 보낸 본인을 제외한 서버에 접속한 클라이언트에게 메세지 보내기
-            for client in client_sockets :
-                if client != client_socket :
-                    client.send(data)
+    def __init__(self, *args):
+        self._args = args
 
-        except ConnectionResetError as e:
-            print('>> Disconnected by ' + addr[0], ':', addr[1])
-            break
+    def connect(self, callback):
+        self._callback = callback
+    
+    def emit(self, *args):
+        if self._callback is not None:
+            self._callback(*args)
 
-    if client_socket in client_sockets :
-        client_sockets.remove(client_socket)
-        print('remove client list : ',len(client_sockets))
+class SimpleClient:
+    sock: Union[socket.socket, None] = None
+    threadSend: Union[ThreadSend, None] = None
+    threadRecv: Union[ThreadRecv, None] = None
+    threadManagerClient: Union[ThreadManagerClient, None] = None
+    recvBuffer: bytearray
 
-    client_socket.close()
+    def __init__(self):
+        self.recvBuffer = bytearray()
+        self.sig_send_data = Callback(bytes)
+        self.sig_recv_data = Callback(bytes)
+        self.queueSend = queue.Queue()
+        self.queueRecv = queue.Queue()
+        self.connect()
+    
+    def connect(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((SERVER, PORT))
+        self.sock.listen()
+        self.startThreadManagerClient()
 
-try:
-    while True:
-        print('>> Wait')
+    def disconnect(self):
+        self.sock.close()
 
-        client_socket, addr = server_socket.accept()
-        client_sockets.append(client_socket)
-        start_new_thread(threaded, (client_socket, addr))
-        print("참가자 수 : ", len(client_sockets))
+    def startThreadSend(self, sock: socket.socket):
+        if self.threadSend is None:
+            self.threadSend = ThreadSend(sock, self.queueSend)
+            self.threadSend.sig_send_data.connect(self.onSendData)
+            self.threadSend.daemon = True
+            self.threadSend.start()
         
-except Exception as e :
-    print ('에러는? : ',e)
+    def startThreadRecv(self, sock: socket.socket, addr: dict):
+        if self.threadRecv is None:
+            self.threadRecv = ThreadRecv(sock, addr, self.queueRecv)
+            self.threadRecv.sig_recv_data.connect(self.onRecvData)
+            self.threadRecv.sig_terminated.connect(self.onRecvDisconnected)
+            self.threadRecv.daemon = True
+            self.threadRecv.start()
 
-finally:
-    server_socket.close()
+    def startThreadManagerClient(self):
+        if self.threadManagerClient is None:
+            self.threadManagerClient = ThreadManagerClient(self.sock)
+            self.threadManagerClient.sig_client_connect.connect(self.onManageClient)
+            self.threadManagerClient.daemon = True
+            self.threadManagerClient.start()
+
+    def stopThreadSend(self):
+        if self.threadSend is not None:
+            self.threadSend.stop()
+            self.threadSend = None
+
+    def stopThreadRecv(self):
+        if self.threadRecv is not None:
+            self.threadRecv.stop()
+            self.threadRecv = None
+
+    def sendData(self, data: Union[bytes, bytearray]):
+        print(f'sendData: {data}')
+        self.queueSend.put(bytes(data))
+
+    def onSendData(self, data: bytes):
+        self.sig_send_data.emit(data)
+
+    def convert(byte_str: str):
+        return bytearray([int(x, 16) for x in byte_str.split(' ')])        
+
+    @staticmethod
+    def calcXORChecksum(data: Union[bytearray, bytes, List[int]]) -> int:
+        return reduce(lambda x, y: x ^ y, data, 0)
+
+    def onRecvData(self, data: bytes):
+        self.recvBuffer.extend(data)
+
+        if self.recvBuffer[0] == 0xF7 and self.recvBuffer[-1] == 0xEE:
+            if self.recvBuffer[4] == 0x02:
+                self.recvBuffer[4] = 0x04
+                self.recvBuffer[8] = self.recvBuffer[7]
+                self.recvBuffer[9] = self.calcXORChecksum(self.recvBuffer[:-2])
+                self.sendData(self.recvBuffer)
+                self.recvBuffer.clear()
+
+    def onRecvDisconnected(self):
+        self.stopThreadSend()
+        self.stopThreadRecv();
+
+    def onManageClient(self, clientSocket:socket.socket, clientAddr: dict):
+        print(f'{clientSocket}, {clientAddr}')
+        self.startThreadSend(clientSocket)
+        self.startThreadRecv(clientSocket, clientAddr)
+
+if __name__ == '__main__':
+    simpleClient = SimpleClient()
+
+    def convert(byte_str: str):
+        return bytearray([int(x, 16) for x in byte_str.split(' ')])
+
+    def loop():
+        sysin = sys.stdin.readline()
+        try:
+            cmd = int(sysin.split('\n')[0])
+        except Exception:
+            loop()
+            return
+
+        if cmd == 0:
+            simpleClient.disconnect()
+            pass
+        elif cmd == 1:
+            simpleClient.sendData(bytearray([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x12, 0x01, 0x01, 0xB2, 0xEE]))
+            loop()
+        elif cmd == 2:
+            simpleClient.sendData(bytearray([0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x01, 0x00, 0xB7, 0xEE]))
+            loop()
+        else:
+            loop()
+    loop()
+
