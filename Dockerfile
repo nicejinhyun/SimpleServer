@@ -11,8 +11,8 @@
 
 #CMD [ "/run.sh" ]
 
-ARG BUILD_FROM
-FROM $BUILD_FROM
+# Copy data for add-on
+COPY run.sh
 
 # Install requirements for add-on
 RUN \
