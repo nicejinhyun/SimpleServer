@@ -163,6 +163,7 @@ class SimpleClient:
 
     def onRecvData(self, data: bytes):
         self.recvBuffer.extend(data)
+        print(f'onRecvData {self.recvBuffer}')
 
         if self.recvBuffer[0] == 0xF7 and self.recvBuffer[-1] == 0xEE:
             if self.recvBuffer[4] == 0x02:
@@ -184,6 +185,7 @@ class SimpleClient:
 if __name__ == '__main__':
     simpleClient = SimpleClient()
 
+    print("Simple Server Start")
     def convert(byte_str: str):
         return bytearray([int(x, 16) for x in byte_str.split(' ')])
 
