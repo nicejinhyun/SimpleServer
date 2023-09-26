@@ -7,7 +7,9 @@ import threading
 from functools import reduce
 from typing import Union, List
 
-SERVER = '127.0.0.1'
+#SERVER = socket.gethostbyname(socket.gethostname())
+#SERVER = '127.0.0.1'
+SERVER = '192.168.0.100'
 PORT = 9999
 
 class ThreadSend(threading.Thread):
@@ -170,6 +172,7 @@ class SimpleClient:
                 self.recvBuffer[4] = 0x04
                 self.recvBuffer[8] = self.recvBuffer[7]
                 self.recvBuffer[9] = self.calcXORChecksum(self.recvBuffer[:-2])
+                print(f'resend packet {self.recvBuffer}')
                 self.sendData(self.recvBuffer)
                 self.recvBuffer.clear()
 
@@ -185,7 +188,7 @@ class SimpleClient:
 if __name__ == '__main__':
     simpleClient = SimpleClient()
 
-    print("Simple Server Start")
+    print(f'Simple Server Start {SERVER}:{PORT}')
     def convert(byte_str: str):
         return bytearray([int(x, 16) for x in byte_str.split(' ')])
 

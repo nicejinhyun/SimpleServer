@@ -1,16 +1,3 @@
-#FROM python:3
-#ENV LANG C.UTF-8
-#COPY run.sh /
-
-#RUN apt-get update && apt-get -y install jq python3
-
-#RUN pip install pyserial && \
-#    pip install paho-mqtt
-
-#RUN chmod a+x /run.sh
-
-#CMD [ "/run.sh" ]
-
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
@@ -24,7 +11,7 @@ RUN \
 WORKDIR /data
 
 # Copy data for add-on
-COPY run.sh /
+COPY run.sh client1.py /data
 RUN chmod a+x /run.sh
 
 CMD [ "/run.sh" ]
