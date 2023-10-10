@@ -8,8 +8,8 @@ from functools import reduce
 from typing import Union, List
 
 #SERVER = socket.gethostbyname(socket.gethostname())
-#SERVER = '127.0.0.1'
-SERVER = '192.168.0.100'
+SERVER = '127.0.0.1'
+#SERVER = '192.168.0.100'
 PORT = 9999
 
 class ThreadSend(threading.Thread):
@@ -99,6 +99,12 @@ class SimpleClient:
     threadManagerClient: Union[ThreadManagerClient, None] = None
     recvBuffer: bytearray
 
+    Devices = {
+        "Light": [0, 0, 0, 0],
+        "Thermostate": [0, 0, 0, 0],
+        "Ventilator": [0x02]
+    }
+
     def __init__(self):
         self.recvBuffer = bytearray()
         self.sig_send_data = Callback(bytes)
@@ -164,17 +170,110 @@ class SimpleClient:
         return reduce(lambda x, y: x ^ y, data, 0)
 
     def onRecvData(self, data: bytes):
-        self.recvBuffer.extend(data)
-        print(f'onRecvData {self.recvBuffer}')
+        recvBuffer = bytearray()
+        recvBuffer.extend(data)
 
-        if self.recvBuffer[0] == 0xF7 and self.recvBuffer[-1] == 0xEE:
-            if self.recvBuffer[4] == 0x02:
-                self.recvBuffer[4] = 0x04
-                self.recvBuffer[8] = self.recvBuffer[7]
-                self.recvBuffer[9] = self.calcXORChecksum(self.recvBuffer[:-2])
-                print(f'resend packet {self.recvBuffer}')
-                self.sendData(self.recvBuffer)
-                self.recvBuffer.clear()
+        if recvBuffer[0] == 0xF7 and recvBuffer[-1] == 0xEE:
+            # Light
+            # Command
+            #              [0]   [1]   [2]   [3]   [4]   [5]  [6]   [7]   [8]   [9]   [10]
+            # 켜짐 명령-> 0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x01, 0x00, 0x86, 0xEE
+            # Ack
+            # 켜짐 상태-> 0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x10, 0x00, 0x01, 0x80, 0xEE
+            # Command
+            # 꺼짐 명령-> 0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x02, 0x00, 0x85, 0xEE
+            # Ack
+            # 꺼짐 상태-> 0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x10, 0x00, 0x02, 0x83, 0xEE
+            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
+            # F7  0B  01  19  02  40  XX  YY  00  ZZ  EE
+            # XX: 상위 4비트 = Room Index, 하위 4비트 = Device Index (1-based)
+            # YY: 01 = ON, 02 = OFF
+            # ZZ: Checksum (XOR SUM)
+            # ACK인 경우:
+            # [7], [8]이 동일한 상태를 가지면 된다.
+            if recvBuffer[3] == 0x19:
+                if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
+                    packet = bytearray([0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40])
+                    deviceIndex = recvBuffer[6] & 0x0F
+                    self.Devices['Light'][deviceIndex] = recvBuffer[7] & 0x0F
+                    recvBuffer[8] = self.Devices['Light'][deviceIndex]
+                    recvBuffer[9] = self.calcXORChecksum(self.recvBuffer[:-2])
+                    self.sendData(packet)
+
+            # Thermostat
+            # 상태 요청: 0xF7, 0x0B, 0x01, 0x18, 0x01, 0x45, 0x11, 0x00, 0x00, 0xB0, 0xEE
+            # 켜짐 상태: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, 0x00, (0x01, 0x1B, 0x17), 0xBE, 0xEE (상태, 현재온도, 설정온도)
+            # 꺼짐 상태: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, 0x00, (0x04, 0x1B, 0x17), 0xBB, 0xEE (상태, 현재온도, 설정온도)
+            # 외출 상태: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, 0x00, (0x07, 0x1B, 0x17), 0xB9, 0xEE
+
+            # 켜짐 명령: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x01, 0x00, 0xB1, 0xEE
+            #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x46, 0x11, 0x01, 0x01, 0x1B, 0x17, 0xBC, 0xEE
+            
+            # 꺼짐 명령: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x04, 0x00, 0xB4, 0xEE
+            #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x46, 0x11, 0x04, 0x04, 0x1B, 0x17, 0xBC, 0xEE
+            
+            # 온도 조절: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x45, 0x11, (0x18), 0x00, 0xA7, 0xEE (온도 24도 설정)
+            #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, (0x18), 0x01, (0x1A, 0x18), 0xA8, 0xEE
+            #
+            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
+            #  F7  0B  01  18  02  46  XX  YY  00  ZZ  EE
+            # XX: 상위 4비트 = 1, 하위 4비트 = Room Index
+            # YY: 0x01=On, 0x04=Off
+            # ZZ: Checksum (XOR SUM)
+            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
+            #  F7  0B  01  18  02  45  XX  YY  00  ZZ  EE
+            # XX: 상위 4비트 = 1, 하위 4비트 = Room Index
+            # YY: 온도 설정값
+            # ZZ: Checksum (XOR SUM)
+            if recvBuffer[3] == 0x18:
+                if recvBuffer[4] == 0x01:
+                    pass
+                if recvBuffer[4] == 0x02:
+                    pass
+            
+            # Ventilator
+            # [환기]
+            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10] [11]
+            #  F7  0C  01  2B  04  4X  11  XX  YY  XX   ZZ   EE
+            # XX: 풍량 (0x01=약, 0x03=중, 0x07=강, 0x02=off)
+            # ZZ: Checksum (XOR SUM)
+            #                 [0]   [1]   [2]   [3]   [4]   [5]   [6]   [7]   [8]   [9]  [10]  [11]
+            # 켜짐(강) 상태-> 0xF7, 0x0C, 0x01, 0x2B, 0x04, 0x42, 0x11, 0x07, 0x01, 0x07, 0x87, 0xEE
+            # 켜짐(중) 상태-> 0xF7, 0x0C, 0x01, 0x2B, 0x04, 0x42, 0x11, 0x03, 0x01, 0x03, 0x87, 0xEE
+            # 켜짐(약) 상태-> 0xF7, 0x0C, 0x01, 0x2B, 0x04, 0x42, 0x11, 0x01, 0x01, 0x01, 0x87, 0xEE
+            # 꺼짐     상태-> 0xF7, 0x0C, 0x01, 0x2B, 0x04, 0x40, 0x11, 0x02, 0x02, 0x01, 0x85, 0xEE
+            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
+            #  F7  0B  01  2B  02  40  11  XX  00  YY  EE
+            # XX: 0x01=On, 0x02=Off
+            # YY: Checksum (XOR SUM)
+            #                 [0]   [1]   [2]   [3]   [4]   [5]   [6]   [7]   [8]   [9]  [10]
+            # 켜짐(강) 명령-> 0xF7, 0x0B, 0x01, 0x2B, 0x02, 0x42, 0x11, 0x07, 0x00, 0x80, 0xEE
+            # 켜짐(중) 명령-> 0xF7, 0x0B, 0x01, 0x2B, 0x02, 0x42, 0x11, 0x03, 0x00, 0x84, 0xEE
+            # 켜짐(약) 명령-> 0xF7, 0x0B, 0x01, 0x2B, 0x02, 0x42, 0x11, 0x01, 0x00, 0x86, 0xEE
+            # 꺼짐     명령-> 0xF7, 0x0B, 0x01, 0x2B, 0x02, 0x40, 0x11, 0x02, 0x00, 0x87, 0xEE
+            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
+            #  F7  0B  01  2B  02  42  11  XX  00  YY  EE
+            # XX: 풍량 (0x01=약, 0x03=중, 0x07=강)
+            # YY: Checksum (XOR SUM)
+
+            if recvBuffer[3] == 0x2B:
+                if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
+                    packet = bytearray([0xF7, 0x0C, 0x01, 0x2B, 0x04])
+                    self.Devices['Ventilator'][0] = recvBuffer[7]
+                    if self.Devices['Ventilator'][0] != 0x02:
+                        packet.append(0x42)
+                    else:
+                        packet.append(0x40)
+                    packet.append(0x11)
+                    packet.append(self.Devices['Ventilator'][0])
+                    if self.Devices['Ventilator'][0] != 0x02:
+                        packet.append(0x01)
+                    else:
+                        packet.append(0x02)
+                    packet.append(self.Devices['Ventilator'][0])
+                    packet.append(self.calcXORChecksum(packet))
+                    packet.append(0xEE)
+                    self.sendData(packet)
 
     def onRecvDisconnected(self):
         self.stopThreadSend()
