@@ -100,8 +100,19 @@ class SimpleClient:
     recvBuffer: bytearray
 
     Devices = {
-        "Light": [0, 0, 0, 0],
-        "Thermostate": [0, 0, 0, 0],
+        "Light": [0x02, 0x02, 0x02, 0x02],
+        "Thermostat": [
+            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11}
+        ],
+        "Airconditioner": [
+            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11}
+        ],
         "Ventilator": [0x02]
     }
 
@@ -193,7 +204,7 @@ class SimpleClient:
             # [7], [8]이 동일한 상태를 가지면 된다.
             if recvBuffer[3] == 0x19:
                 if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
-                    packet = bytearray([0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40])
+                    packet = bytearray([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40])
                     deviceIndex = recvBuffer[6] & 0x0F
                     self.Devices['Light'][deviceIndex] = recvBuffer[7] & 0x0F
                     recvBuffer[8] = self.Devices['Light'][deviceIndex]
@@ -208,13 +219,11 @@ class SimpleClient:
 
             # 켜짐 명령: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x01, 0x00, 0xB1, 0xEE
             #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x46, 0x11, 0x01, 0x01, 0x1B, 0x17, 0xBC, 0xEE
-            
             # 꺼짐 명령: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x04, 0x00, 0xB4, 0xEE
             #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x46, 0x11, 0x04, 0x04, 0x1B, 0x17, 0xBC, 0xEE
-            
             # 온도 조절: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x45, 0x11, (0x18), 0x00, 0xA7, 0xEE (온도 24도 설정)
             #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, (0x18), 0x01, (0x1A, 0x18), 0xA8, 0xEE
-            #
+
             # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
             #  F7  0B  01  18  02  46  XX  YY  00  ZZ  EE
             # XX: 상위 4비트 = 1, 하위 4비트 = Room Index
@@ -226,11 +235,36 @@ class SimpleClient:
             # YY: 온도 설정값
             # ZZ: Checksum (XOR SUM)
             if recvBuffer[3] == 0x18:
+                packet = bytearray([0xF7, 0x0D, 0x01, 0x18, 0x04])
+                roomIndex = recvBuffer[6] & 0x0F
                 if recvBuffer[4] == 0x01:
-                    pass
+                    packet.append(0x45)
+                    packet.append(recvBuffer[6])
+                    packet.append(0x00)
+                    packet(self.Devices['Thermostat'][roomIndex-1]['state'])
+                    packet(self.Devices['Thermostat'][roomIndex-1]['currTherm'])
+                    packet(self.Devices['Thermostat'][roomIndex-1]['setTherm'])
                 if recvBuffer[4] == 0x02:
-                    pass
-            
+                    if recvBuffer[5] == 0x46:
+                        self.Devices['Thermostat'][roomIndex-1]['state'] = recvBuffer[7]
+                    else:
+                        self.Devices['Thermostat'][roomIndex-1]['setTherm'] = recvBuffer[7]
+
+                    packet.append(recvBuffer[5])
+                    packet.append(recvBuffer[6])
+                    if recvBuffer[5] == 0x46:
+                        packet.append(self.Devices['Thermostat'][roomIndex-1]['state'])
+                        packet.append(self.Devices['Thermostat'][roomIndex-1]['state'])
+                    else:
+                        packet.append(self.Devices['Thermostat'][roomIndex-1]['setTherm'])
+                        packet.append(self.Devices['Thermostat'][roomIndex-1]['state'])
+
+                    packet.append(self.Devices['Thermostat'][roomIndex-1]['currTherm'])
+                    packet.append(self.Devices['Thermostat'][roomIndex-1]['setTherm'])
+
+                packet.append(self.calcXORChecksum(packet))
+                packet.append(0xEE)
+
             # Ventilator
             # [환기]
             # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10] [11]
