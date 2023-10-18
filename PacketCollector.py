@@ -7,6 +7,8 @@ SERVER = '127.0.0.1'
 #SERVER = '192.168.0.100'
 PORT = 9999
 
+deviceList = [0x19, 0x18, 0x34, 0x1F, 0x2B]
+
 class Callback(object):
     _args = None
     _callback = None
