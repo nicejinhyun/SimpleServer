@@ -80,7 +80,8 @@ class PacketCollector:
         recvBuffer.extend(data)
 
         if recvBuffer[0] == 0xF7 and recvBuffer[-1] == 0xEE:
-            print(f'recv: {recvBuffer}')
+            if recvBuffer[3] in deviceList:
+                print(f'recv: {recvBuffer}')
 
     def onRecvDisconnected(self):
         self.stopThreadRecv();

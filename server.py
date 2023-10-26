@@ -184,7 +184,7 @@ class SimpleClient:
         recvBuffer = bytearray()
         recvBuffer.extend(data)
 
-        if recvBuffer[0] == 0xF7 and recvBuffer[-1] == 0xEE:
+        if len(recvBuffer) >= 10 and recvBuffer[0] == 0xF7 and recvBuffer[-1] == 0xEE:
             # Light
             # Command
             #              [0]   [1]   [2]   [3]   [4]   [5]  [6]   [7]   [8]   [9]   [10]
