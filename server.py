@@ -318,6 +318,11 @@ class SimpleClient:
                     packet.append(0xEE)
                     self.sendData(packet)
 
+            if recvBuffer[3] == 0x1B:
+                if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
+                    packet = bytearray([0xF7, 0x0B, 0x01, 0x1B, 0x04, 0x43, 0x11, 0x03, 0x03, 0xBB, 0xEE])
+                    self.sendData(packet)
+
     def onRecvDisconnected(self):
         self.stopThreadSend()
         self.stopThreadRecv();
