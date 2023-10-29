@@ -209,8 +209,17 @@ class SimpleClient:
                     packet = bytearray([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40])
                     deviceIndex = recvBuffer[6] & 0x0F
                     self.Devices['Light'][deviceIndex] = recvBuffer[7] & 0x0F
-                    recvBuffer[8] = self.Devices['Light'][deviceIndex]
-                    recvBuffer[9] = self.calcXORChecksum(self.recvBuffer[:-2])
+                    packet.append(recvBuffer[6])
+                    packet.append(recvBuffer[7])
+                    packet.append(recvBuffer[7])
+                    packet.append(self.calcXORChecksum(packet[:-2]))
+                    packet.append(0xEE)
+                    packet.extend([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40])
+                    packet.append(recvBuffer[6])
+                    packet.append(recvBuffer[7])
+                    packet.append(recvBuffer[7])
+                    packet.append(self.calcXORChecksum(packet[:-2]))
+                    packet.append(0xEE)                    
                     self.sendData(packet)
 
             # Thermostat
@@ -311,6 +320,11 @@ class SimpleClient:
                     packet.append(0xEE)
                     self.sendData(packet)
         """
+
+            if recvBuffer[3] == 0x1B:
+                if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
+                    packet = bytearray([0xF7, 0x0B, 0x01, 0x1B, 0x04, 0x43, 0x11, 0x03, 0x03, 0xBB, 0xEE])
+                    self.sendData(packet)
 
     def onRecvDisconnected(self):
         self.stopThreadSend()
