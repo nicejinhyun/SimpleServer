@@ -8,9 +8,9 @@ from functools import reduce
 from typing import Union, List
 
 #SERVER = socket.gethostbyname(socket.gethostname())
-SERVER = '127.0.0.1'
+SERVER = '192.168.219.120'
 #SERVER = '192.168.0.100'
-PORT = 9999
+PORT = 8899
 
 class ThreadSend(threading.Thread):
     keepAlive = True
@@ -184,6 +184,8 @@ class SimpleClient:
         recvBuffer = bytearray()
         recvBuffer.extend(data)
 
+        print(f'{recvBuffer}')
+        """
         if len(recvBuffer) >= 10 and recvBuffer[0] == 0xF7 and recvBuffer[-1] == 0xEE:
             # Light
             # Command
@@ -308,6 +310,7 @@ class SimpleClient:
                     packet.append(self.calcXORChecksum(packet))
                     packet.append(0xEE)
                     self.sendData(packet)
+        """
 
     def onRecvDisconnected(self):
         self.stopThreadSend()
@@ -317,6 +320,10 @@ class SimpleClient:
         print(f'{clientSocket}, {clientAddr}')
         self.startThreadSend(clientSocket)
         self.startThreadRecv(clientSocket, clientAddr)
+
+@staticmethod
+def calcXORChecksum(data: Union[bytearray, bytes, List[int]]) -> int:
+    return reduce(lambda x, y: x ^ y, data, 0)
 
 if __name__ == '__main__':
     simpleClient = SimpleClient()
@@ -336,8 +343,12 @@ if __name__ == '__main__':
         if cmd == 0:
             simpleClient.disconnect()
             pass
-        elif cmd == 1:
-            simpleClient.sendData(bytearray([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x12, 0x01, 0x01, 0xB2, 0xEE]))
+        elif cmd == 1: 
+            packet = bytearray([0xF7, 0x0B, 0x01, 0x34])
+            packet.extend([0x02, 0x41, 0x10, 0x06, 0x00])
+            packet.append(calcXORChecksum(packet))
+            packet.append(0xEE)
+            simpleClient.sendData(packet)
             loop()
         elif cmd == 2:
             simpleClient.sendData(bytearray([0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x01, 0x00, 0xB7, 0xEE]))
