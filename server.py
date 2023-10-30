@@ -100,20 +100,21 @@ class SimpleClient:
     recvBuffer: bytearray
 
     Devices = {
-        "Light": [0x02, 0x02, 0x02, 0x02],
-        "Thermostat": [
-            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
-            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
-            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
-            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11}
+        'Thermostat': [
+            {'state': 0x04, 'currTherm': 0x19, 'targetTherm': 0x11},
+            {'state': 0x04, 'currTherm': 0x19, 'targetTherm': 0x11},
+            {'state': 0x04, 'currTherm': 0x19, 'targetTherm': 0x11},
+            {'state': 0x04, 'currTherm': 0x19, 'targetTherm': 0x11}
         ],
-        "Airconditioner": [
-            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
-            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
-            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11},
-            {'state': 0x02, 'currTherm': 0x11, 'setTherm': 0x11}
+        'Light': [0x02, 0x02, 0x02, 0x02],
+        'Airconditioner': [
+            {'state': 0x02, 'currTherm': 0x11, 'targetTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'targetTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'targetTherm': 0x11},
+            {'state': 0x02, 'currTherm': 0x11, 'targetTherm': 0x11}
         ],
-        "Ventilator": [0x02]
+        'GasValve': [0x03],
+        'Ventilator': [0x02]
     }
 
     def __init__(self):
@@ -184,144 +185,100 @@ class SimpleClient:
         recvBuffer = bytearray()
         recvBuffer.extend(data)
 
-        if len(recvBuffer) >= 10 and recvBuffer[0] == 0xF7 and recvBuffer[-1] == 0xEE:
-            # Light
-            # Command
-            #              [0]   [1]   [2]   [3]   [4]   [5]  [6]   [7]   [8]   [9]   [10]
-            # 켜짐 명령-> 0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x01, 0x00, 0x86, 0xEE
-            # Ack
-            # 켜짐 상태-> 0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x10, 0x00, 0x01, 0x80, 0xEE
-            # Command
-            # 꺼짐 명령-> 0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x02, 0x00, 0x85, 0xEE
-            # Ack
-            # 꺼짐 상태-> 0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x10, 0x00, 0x02, 0x83, 0xEE
-            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
-            # F7  0B  01  19  02  40  XX  YY  00  ZZ  EE
-            # XX: 상위 4비트 = Room Index, 하위 4비트 = Device Index (1-based)
-            # YY: 01 = ON, 02 = OFF
-            # ZZ: Checksum (XOR SUM)
-            # ACK인 경우:
-            # [7], [8]이 동일한 상태를 가지면 된다.
-            if recvBuffer[3] == 0x19:
-                if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
-                    packet = bytearray([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40])
-                    deviceIndex = recvBuffer[6] & 0x0F
-                    self.Devices['Light'][deviceIndex] = recvBuffer[7] & 0x0F
+        deviceId = recvBuffer[3]
+
+        print(f'deviceId {deviceId}')
+        print(f'state: {recvBuffer[3]}')
+
+        if recvBuffer[4] == 0x02:
+            print(f'{recvBuffer}')
+            if deviceId == 0x18: # Thermostat
+                # F7 0B 01 18 02 45 XX YY 00 ZZ EE
+                # F7 0D 01 18 04 45 XX 18 01 1A 18 A8 EE
+                # XX: 상위 4비트 = 1, 하위 4비트 = Room Index
+                # YY: 온도 설정값
+                print(f'{recvBuffer}')
+                thermCmd = recvBuffer[5]
+                if thermCmd == 0x45:
+                    roomIndex = recvBuffer[6] >> 4
+                    targetTherm = recvBuffer[7]
+                    self.Devices['Thermostat'][roomIndex]['targetTherm'] = targetTherm
+                    if targetTherm > self.Devices['Thermostat'][roomIndex]['currTherm']:
+                        self.Devices['Thermostat'][roomIndex]['state'] = 0x01
+                    packet = bytearray([0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45])
                     packet.append(recvBuffer[6])
                     packet.append(recvBuffer[7])
-                    packet.append(recvBuffer[7])
-                    packet.append(self.calcXORChecksum(packet[:-2]))
+                    packet.append(0x01)
+                    packet.append(self.Devices['Thermostat'][roomIndex]['currTherm'])
+                    packet.append(self.Devices['Thermostat'][roomIndex]['targetTherm'])
+                    packet.append(self.calcXORChecksum(packet))
                     packet.append(0xEE)
-                    packet.extend([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40])
-                    packet.append(recvBuffer[6])
-                    packet.append(recvBuffer[7])
-                    packet.append(recvBuffer[7])
-                    packet.append(self.calcXORChecksum(packet[:-2]))
-                    packet.append(0xEE)                    
                     self.sendData(packet)
+                elif thermCmd == 0x46:
+                    #   F7    0B    01    18    02    46    XX    YY    00    ZZ    EE
+                    # 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x01, 0x00, 0xB1, 0xEE
+                    # XX: 상위 4비트 = 1, 하위 4비트 = Room Index
+                    # YY: 0x01=On, 0x04=Off
+                    # ZZ: Checksum (XOR SUM)
+                    stateCmd = recvBuffer[7]
+                    roomIndex = recvBuffer[6] >> 4
+                    onOffCmd = recvBuffer[7]
+                    if self.Devices['Thermostat'][roomIndex]['targetTherm'] < self.Devices['Thermostat'][roomIndex]['currTherm']:
+                        onOffCmd = 0x04
 
-            # Thermostat
-            # 상태 요청: 0xF7, 0x0B, 0x01, 0x18, 0x01, 0x45, 0x11, 0x00, 0x00, 0xB0, 0xEE
-            # 켜짐 상태: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, 0x00, (0x01, 0x1B, 0x17), 0xBE, 0xEE (상태, 현재온도, 설정온도)
-            # 꺼짐 상태: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, 0x00, (0x04, 0x1B, 0x17), 0xBB, 0xEE (상태, 현재온도, 설정온도)
-            # 외출 상태: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, 0x00, (0x07, 0x1B, 0x17), 0xB9, 0xEE
-
-            # 켜짐 명령: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x01, 0x00, 0xB1, 0xEE
-            #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x46, 0x11, 0x01, 0x01, 0x1B, 0x17, 0xBC, 0xEE
-            # 꺼짐 명령: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x04, 0x00, 0xB4, 0xEE
-            #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x46, 0x11, 0x04, 0x04, 0x1B, 0x17, 0xBC, 0xEE
-            # 온도 조절: 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x45, 0x11, (0x18), 0x00, 0xA7, 0xEE (온도 24도 설정)
-            #      ACK: 0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45, 0x11, (0x18), 0x01, (0x1A, 0x18), 0xA8, 0xEE
-
-            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
-            #  F7  0B  01  18  02  46  XX  YY  00  ZZ  EE
-            # XX: 상위 4비트 = 1, 하위 4비트 = Room Index
-            # YY: 0x01=On, 0x04=Off
-            # ZZ: Checksum (XOR SUM)
-            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
-            #  F7  0B  01  18  02  45  XX  YY  00  ZZ  EE
-            # XX: 상위 4비트 = 1, 하위 4비트 = Room Index
-            # YY: 온도 설정값
-            # ZZ: Checksum (XOR SUM)
-            if recvBuffer[3] == 0x18:
-                packet = bytearray([0xF7, 0x0D, 0x01, 0x18, 0x04])
-                roomIndex = recvBuffer[6] & 0x0F
-                if recvBuffer[4] == 0x01:
-                    packet.append(0x45)
-                    packet.append(recvBuffer[6])
-                    packet.append(0x00)
-                    packet(self.Devices['Thermostat'][roomIndex-1]['state'])
-                    packet(self.Devices['Thermostat'][roomIndex-1]['currTherm'])
-                    packet(self.Devices['Thermostat'][roomIndex-1]['setTherm'])
-                if recvBuffer[4] == 0x02:
-                    if recvBuffer[5] == 0x46:
-                        self.Devices['Thermostat'][roomIndex-1]['state'] = recvBuffer[7]
-                    else:
-                        self.Devices['Thermostat'][roomIndex-1]['setTherm'] = recvBuffer[7]
-
-                    packet.append(recvBuffer[5])
-                    packet.append(recvBuffer[6])
-                    if recvBuffer[5] == 0x46:
-                        packet.append(self.Devices['Thermostat'][roomIndex-1]['state'])
-                        packet.append(self.Devices['Thermostat'][roomIndex-1]['state'])
-                    else:
-                        packet.append(self.Devices['Thermostat'][roomIndex-1]['setTherm'])
-                        packet.append(self.Devices['Thermostat'][roomIndex-1]['state'])
-
-                    packet.append(self.Devices['Thermostat'][roomIndex-1]['currTherm'])
-                    packet.append(self.Devices['Thermostat'][roomIndex-1]['setTherm'])
-
-                packet.append(self.calcXORChecksum(packet))
-                packet.append(0xEE)
-
-            # Ventilator
-            # [환기]
-            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10] [11]
-            #  F7  0C  01  2B  04  4X  11  XX  YY  XX   ZZ   EE
-            # XX: 풍량 (0x01=약, 0x03=중, 0x07=강, 0x02=off)
-            # ZZ: Checksum (XOR SUM)
-            #                 [0]   [1]   [2]   [3]   [4]   [5]   [6]   [7]   [8]   [9]  [10]  [11]
-            # 켜짐(강) 상태-> 0xF7, 0x0C, 0x01, 0x2B, 0x04, 0x42, 0x11, 0x07, 0x01, 0x07, 0x87, 0xEE
-            # 켜짐(중) 상태-> 0xF7, 0x0C, 0x01, 0x2B, 0x04, 0x42, 0x11, 0x03, 0x01, 0x03, 0x87, 0xEE
-            # 켜짐(약) 상태-> 0xF7, 0x0C, 0x01, 0x2B, 0x04, 0x42, 0x11, 0x01, 0x01, 0x01, 0x87, 0xEE
-            # 꺼짐     상태-> 0xF7, 0x0C, 0x01, 0x2B, 0x04, 0x40, 0x11, 0x02, 0x02, 0x01, 0x85, 0xEE
-            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
-            #  F7  0B  01  2B  02  40  11  XX  00  YY  EE
-            # XX: 0x01=On, 0x02=Off
-            # YY: Checksum (XOR SUM)
-            #                 [0]   [1]   [2]   [3]   [4]   [5]   [6]   [7]   [8]   [9]  [10]
-            # 켜짐(강) 명령-> 0xF7, 0x0B, 0x01, 0x2B, 0x02, 0x42, 0x11, 0x07, 0x00, 0x80, 0xEE
-            # 켜짐(중) 명령-> 0xF7, 0x0B, 0x01, 0x2B, 0x02, 0x42, 0x11, 0x03, 0x00, 0x84, 0xEE
-            # 켜짐(약) 명령-> 0xF7, 0x0B, 0x01, 0x2B, 0x02, 0x42, 0x11, 0x01, 0x00, 0x86, 0xEE
-            # 꺼짐     명령-> 0xF7, 0x0B, 0x01, 0x2B, 0x02, 0x40, 0x11, 0x02, 0x00, 0x87, 0xEE
-            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
-            #  F7  0B  01  2B  02  42  11  XX  00  YY  EE
-            # XX: 풍량 (0x01=약, 0x03=중, 0x07=강)
-            # YY: Checksum (XOR SUM)
-
-            if recvBuffer[3] == 0x2B:
-                if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
-                    packet = bytearray([0xF7, 0x0C, 0x01, 0x2B, 0x04])
-                    self.Devices['Ventilator'][0] = recvBuffer[7]
-                    if self.Devices['Ventilator'][0] != 0x02:
-                        packet.append(0x42)
-                    else:
-                        packet.append(0x40)
-                    packet.append(0x11)
-                    packet.append(self.Devices['Ventilator'][0])
-                    if self.Devices['Ventilator'][0] != 0x02:
-                        packet.append(0x01)
-                    else:
-                        packet.append(0x02)
-                    packet.append(self.Devices['Ventilator'][0])
+                    packet = bytearray([0xF7, 0x0D, 0x01, 0x18, 0x04, 0x46, recvBuffer[6], onOffCmd, onOffCmd,
+                                self.Devices['Thermostat'][roomIndex]['currTherm'], self.Devices['Thermostat'][roomIndex]['targetTherm']])
+                    
                     packet.append(self.calcXORChecksum(packet))
                     packet.append(0xEE)
                     self.sendData(packet)
 
-            if recvBuffer[3] == 0x1B:
-                if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
-                    packet = bytearray([0xF7, 0x0B, 0x01, 0x1B, 0x04, 0x43, 0x11, 0x03, 0x03, 0xBB, 0xEE])
-                    self.sendData(packet)
+            elif deviceId == 0x19: # Light
+                # F7 0B 01 19 02 40 XX YY 00 ZZ EE
+                # XX: 상위 4비트 = Room Index, 하위 4비트 = Device Index (1-based)
+                # YY: 02 = OFF, 01 = ON
+                # ZZ: Checksum (XOR SUM)
+                deviceIndex = (recvBuffer[6] & 0x0F) - 1
+                lightState = recvBuffer[7]
+                self.Devices['Light'][deviceIndex] = lightState
+                packet = ([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40])
+                packet.append(recvBuffer[6])
+                packet.append(recvBuffer[7])
+                packet.append(recvBuffer[7])
+                packet.append(self.calcXORChecksum(packet))
+                packet.append(0xEE)
+                self.sendData(packet)
+                                        
+            elif deviceId == 0x1B: # GasValve
+                self.Devices['GasValve'][0] = recvBuffer[7]
+                packet = bytearray([0xF7, 0x0B, 0x01, 0x1B, 0x04, 0x43, 0x11])
+                packet.append(recvBuffer[7])
+                packet.append(recvBuffer[7])
+                packet.append(self.calcXORChecksum(packet))
+                packet.append(0xEE)
+                self.sendData(packet)
+            elif deviceId == 0x1C: # Airconditioner
+                pass
+            elif deviceId == 0x1E: # Doorlock
+                pass
+            elif deviceId == 0x2A: # BatchOffSwitch
+                pass
+            elif deviceId == 0x2B: # Ventilator
+                packet = bytearray([0xF7, 0x0C, 0x01, 0x2B, 0x04])
+                if recvBuffer[7] == 0x02:
+                    packet.extend([0x40, 0x11, 0x02, 0x02, 0x01])
+                else:
+                    packet.extend([0x42, 0x11, recvBuffer[7], 0x01, recvBuffer[7]])
+                packet.append(self.calcXORChecksum(packet))
+                packet.append(0xEE)
+                self.sendData(packet)
+                pass
+            elif deviceId == 0x34: # Elivator
+                packet = bytearray([0xF7, 0x0B, 0x01, 0x34])
+                packet.extend([0x04, 0x41, 0x10, 0x06, 0x00])
+                packet.append(self.calcXORChecksum(packet))
+                packet.append(0xEE)
+                self.sendData(packet)
 
     def onRecvDisconnected(self):
         self.stopThreadSend()
