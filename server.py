@@ -185,7 +185,6 @@ class SimpleClient:
         recvBuffer = bytearray()
         recvBuffer.extend(data)
 
-<<<<<<< HEAD
         deviceId = recvBuffer[3]
 
         print(f'deviceId {deviceId}')
@@ -207,33 +206,6 @@ class SimpleClient:
                     if targetTherm > self.Devices['Thermostat'][roomIndex]['currTherm']:
                         self.Devices['Thermostat'][roomIndex]['state'] = 0x01
                     packet = bytearray([0xF7, 0x0D, 0x01, 0x18, 0x04, 0x45])
-=======
-        print(f'{recvBuffer}')
-        """
-        if len(recvBuffer) >= 10 and recvBuffer[0] == 0xF7 and recvBuffer[-1] == 0xEE:
-            # Light
-            # Command
-            #              [0]   [1]   [2]   [3]   [4]   [5]  [6]   [7]   [8]   [9]   [10]
-            # 켜짐 명령-> 0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x01, 0x00, 0x86, 0xEE
-            # Ack
-            # 켜짐 상태-> 0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x10, 0x00, 0x01, 0x80, 0xEE
-            # Command
-            # 꺼짐 명령-> 0xF7, 0x0B, 0x01, 0x19, 0x02, 0x40, 0x10, 0x02, 0x00, 0x85, 0xEE
-            # Ack
-            # 꺼짐 상태-> 0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40, 0x10, 0x00, 0x02, 0x83, 0xEE
-            # [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [10]
-            # F7  0B  01  19  02  40  XX  YY  00  ZZ  EE
-            # XX: 상위 4비트 = Room Index, 하위 4비트 = Device Index (1-based)
-            # YY: 01 = ON, 02 = OFF
-            # ZZ: Checksum (XOR SUM)
-            # ACK인 경우:
-            # [7], [8]이 동일한 상태를 가지면 된다.
-            if recvBuffer[3] == 0x19:
-                if recvBuffer[4] == 0x01 or recvBuffer[4] == 0x02:
-                    packet = bytearray([0xF7, 0x0B, 0x01, 0x19, 0x04, 0x40])
-                    deviceIndex = recvBuffer[6] & 0x0F
-                    self.Devices['Light'][deviceIndex] = recvBuffer[7] & 0x0F
->>>>>>> 40b4d310ba2dabf33111acf351b529c199a9cd79
                     packet.append(recvBuffer[6])
                     packet.append(recvBuffer[7])
                     packet.append(0x01)
@@ -241,7 +213,6 @@ class SimpleClient:
                     packet.append(self.Devices['Thermostat'][roomIndex]['targetTherm'])
                     packet.append(self.calcXORChecksum(packet))
                     packet.append(0xEE)
-                    self.sendData(packet)
                 elif thermCmd == 0x46:
                     #   F7    0B    01    18    02    46    XX    YY    00    ZZ    EE
                     # 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x01, 0x00, 0xB1, 0xEE
@@ -260,7 +231,6 @@ class SimpleClient:
                     packet.append(self.calcXORChecksum(packet))
                     packet.append(0xEE)
                     self.sendData(packet)
-        """
 
             elif deviceId == 0x19: # Light
                 # F7 0B 01 19 02 40 XX YY 00 ZZ EE
@@ -277,7 +247,7 @@ class SimpleClient:
                 packet.append(self.calcXORChecksum(packet))
                 packet.append(0xEE)
                 self.sendData(packet)
-                                        
+
             elif deviceId == 0x1B: # GasValve
                 self.Devices['GasValve'][0] = recvBuffer[7]
                 packet = bytearray([0xF7, 0x0B, 0x01, 0x1B, 0x04, 0x43, 0x11])
