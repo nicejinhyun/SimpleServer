@@ -8,9 +8,9 @@ from functools import reduce
 from typing import Union, List
 
 #SERVER = socket.gethostbyname(socket.gethostname())
-SERVER = '192.168.219.120'
+SERVER = '127.0.0.1'
 #SERVER = '192.168.0.100'
-PORT = 8899
+PORT = 9999
 
 class ThreadSend(threading.Thread):
     keepAlive = True
