@@ -213,6 +213,7 @@ class SimpleClient:
                     packet.append(self.Devices['Thermostat'][roomIndex]['targetTherm'])
                     packet.append(self.calcXORChecksum(packet))
                     packet.append(0xEE)
+                    self.sendData(packet)
                 elif thermCmd == 0x46:
                     #   F7    0B    01    18    02    46    XX    YY    00    ZZ    EE
                     # 0xF7, 0x0B, 0x01, 0x18, 0x02, 0x46, 0x11, 0x01, 0x00, 0xB1, 0xEE
